@@ -48,14 +48,14 @@ check_answer() {
             fi
         else
             case $selected in
-                1)  RESTART='\e[36;1mRESTART\e[0m'
-                    MENU='MENU';;
-                0)  RESTART='RESTART'
-                    MENU='\e[36;1mMENU\e[0m';;
+                1)  NEW='\e[36;1mNEW GAME\e[0m'
+                    MENU='MAIN MENU';;
+                0)  NEW='NEW GAME'
+                    MENU='\e[36;1mMAIN MENU\e[0m';;
             esac
             echo -en "|\e[0m       \e[32mCorrect\e[0m       \e[36m|
                     \r|\e[0m                     \e[36m|
-                    \r|\e[0m    $RESTART  $MENU    \e[36m|
+                    \r|\e[0m $NEW  $MENU \e[36m|
                     \r|\e[0m                     \e[36m|
                     \r+---------------------+"
             read -sn1 key1
@@ -65,9 +65,9 @@ check_answer() {
             if [ -z "$key1" ]; then
                 # Bashing and exiting is quickest way to clear the variables
                 if (($selected)); then
-                    bash $0 "${difficulty[@]}"
+                    bash "$0" "${difficulty[@]}"
                 else
-                    bash $0
+                    bash "$0"
                 fi
                 exit
             fi
@@ -77,7 +77,7 @@ check_answer() {
     unset C D
 }
 
-quit() {
+quit_reset() {
     selected=0
     while true; do
         tput reset
@@ -92,7 +92,7 @@ quit() {
         sed "s/^/$(echo -e '\e[36m|\e[0m') /;s/$/ $(echo -e '\e[36m|')/" < <(show_grid $ref_col $ref_row)
         echo -en "|\e[0m                     \e[36m|
                 \r|\e[0m    Are you sure     \e[36m|
-                \r|\e[0m  you want to quit?  \e[36m|
+                \r|\e[0m  you want to $1 \e[36m|
                 \r|\e[0m      $YES    $NO      \e[36m|
                 \r\e[36m+---------------------+"
         read -sn1 -t1 key1
@@ -101,8 +101,18 @@ quit() {
         read -sn1 -t 0.0001 key3
         [[ "$key3" == [CD] ]] && ((selected^=1))
         if [ -z "$key1" ]; then
-            finish_time=$(date '+%s')
-            (($selected)) && exit || break
+            if (($selected)); then
+                [[ "$1" == "quit? " ]] && exit
+                if [[ "$1" == "reset?" ]]; then
+                    # Clears the puzzle of all guesses and resets the timer
+                    declare -A grid
+                    for index in "${!grid_reset[@]}"; do
+                        grid[$index]="${grid_reset[$index]}"
+                    done
+                    navigate
+                fi
+            fi
+            break
         fi
         unset key1 key2 key3
     done
@@ -110,20 +120,37 @@ quit() {
 
 pause() {
     # Pause and help menu screen
-    tput reset
-    echo -en "$time_taken\n\e[36m+---------------------+
-            \r|\e[0m                     \e[36m|
-            \r|\e[0m        \e[1mPAUSE\e[0m        \e[36m|
-            \r|\e[0m                     \e[36m|
-            \r|\e[0m                     \e[36m|
-            \r$(show_help)
-            \r|\e[0m                     \e[36m|
-            \r|\e[0m                     \e[36m|
-            \r|\e[0m                     \e[36m|
-            \r|\e[0m                     \e[36m|
-            \r|\e[0m        \e[36;1mCLOSE\e[0m        \e[36m|
-            \r|\e[0m                     \e[36m|
-            \r\e[36m+---------------------+"
+    selected=1
+    while true; do
+        tput reset
+        case $selected in
+            1)  RETURN='\e[36;1mRETURN\e[0m'
+                MENU='MAIN MENU';;
+            0)  RETURN='RETURN'
+                MENU='\e[36;1mMAIN MENU\e[0m';;
+        esac
+        echo -en "\e[0m$time_taken\n\e[36m+---------------------+
+                \r|\e[0m                     \e[36m|
+                \r|\e[0m        \e[1mPAUSE\e[0m        \e[36m|
+                \r|\e[0m                     \e[36m|
+                \r|\e[0m                     \e[36m|
+                \r$(show_help)
+                \r|\e[0m                     \e[36m|
+                \r|\e[0m                     \e[36m|
+                \r|\e[0m                     \e[36m|
+                \r|\e[0m                     \e[36m|
+                \r|\e[0m  $RETURN  $MENU  \e[36m|
+                \r|\e[0m                     \e[36m|
+                \r\e[36m+---------------------+"
+        read -sn1 key1
+        read -sn1 -t 0.0001 key2
+        read -sn1 -t 0.0001 key3
+        [[ "$key3" == [CD] ]] && ((selected^=1))
+        if [ -z "$key1" ]; then
+            (($selected)) && break || { bash "$0"; exit; }
+        fi
+        unset key1 key2 key3
+    done
 }
 
 show_grid() {
@@ -155,7 +182,7 @@ navigate() {
     # Run extrap on EXIT status
     trap extrap EXIT
     # Save epoch for timer
-    start_time=$(date '+%s')
+    [ -z "$start_time" ] && start_time=$(date '+%s')
     ref_col=0
     ref_row=0
     while true; do
@@ -171,8 +198,8 @@ navigate() {
                 \r|\e[0m                     \e[36m|
                 \r+---------------------+'
         # Arrow keys are three characters long
-        read -sn1 -t0.8 key1
-        # Refresh the screen every 0.8 seconds to update timer
+        read -sn1 -t1 key1
+        # Refresh the screen every second to update timer
         (($?==142)) && continue
         read -sn1 -t 0.0001 key2
         read -sn1 -t 0.0001 key3
@@ -193,10 +220,10 @@ navigate() {
             c)      check_answer;;
             h|p)    pause_time_start=$(date '+%s')
                     pause
-                    read -s
                     pause_time_finish=$(date '+%s')
                     ((start_time+=$(($pause_time_finish-$pause_time_start))));;
-            q)      quit;;
+            r)      quit_reset "reset?";;
+            q)      quit_reset "quit? ";;
         esac
         unset key1 key2 key3
     done
@@ -235,6 +262,11 @@ scatter() {
                 done
             done
         done
+    done
+    # Create copy of the scattered grid for a reset if needed
+    declare -A grid_reset
+    for index in "${!grid[@]}"; do
+        grid_reset[$index]="${grid[$index]}"
     done
     navigate
 }
@@ -311,19 +343,19 @@ set_difficulty() {
             tput reset
             case $selected in
                 4)  VERY_EASY='\e[1;36mVERY  EASY\e[0m'
-                    difficulty=(4 7 9 9 9)
+                    difficulty=(9 9 9 9 9)
                     unset EASY NORMAL HARD VERY_HARD;;
                 3)  EASY='\e[1;36mEASY\e[0m'
-                    difficulty=(2 5 7 9 9)
+                    difficulty=(4 9 9 9 9)
                     unset VERY_EASY NORMAL HARD VERY_HARD;;
                 2)  NORMAL='\e[1;36mNORMAL\e[0m'
-                    difficulty=(1 4 7 9 9)
+                    difficulty=(0 4 9 9 9)
                     unset VERY_EASY EASY HARD VERY_HARD;;
                 1)  HARD='\e[1;36mHARD\e[0m'
-                    difficulty=(0 1 3 6 9)
+                    difficulty=(0 0 4 9 9)
                     unset VERY_EASY EASY NORMAL VERY_HARD;;
                 0)  VERY_HARD='\e[1;36mVERY  HARD\e[0m'
-                    difficulty=(0 0 1 4 9)
+                    difficulty=(0 0 0 4 9)
                     unset VERY_EASY EASY NORMAL HARD;;
             esac
             VERY_EASY=${VERY_EASY:-'VERY  EASY'}
