@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Creates a copy of the script to tmp for it to be executed in a new terminal
-sed -n '8,$p' $0 > /tmp/sudoku
+sed -n '8,$p' $0 >| /tmp/sudoku
 gnome-terminal --title "Sudoku" --geometry 23x20+850+350 -e 'bash /tmp/sudoku' 2>/dev/null
 exit
 
@@ -13,18 +13,18 @@ check_answer() {
     # Default colour
     D=$(tput setaf 9)
     # Remove text formatting from grid and output to tmp
-    sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2}(;[0-9]{1,2})?)?)?[mGK]//g" < <(show_grid) > /tmp/sudoku_check
+    sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2}(;[0-9]{1,2})?)?)?[mGK]//g" < <(show_grid) >| /tmp/sudoku_check
     # Compare files
     cmp -s /tmp/sudoku_check /tmp/sudoku_answer 2>/dev/null
     answer_bool=$?
     selected=1
-    # If files match set colour to green, if not set to
+    # If files match set colour to green, if not set to red
     (($answer_bool>0)) && C=$(tput setaf 1) || C=$(tput setaf 2)
     get_time
     while true; do
         tput reset
         echo -e "\e[0m$time_taken\n\e[36m+---------------------+"
-        sed "s/^/$(echo -e '\e[36m|\e[0m') /;s/$/ $(echo -e '\e[36m|')/" < <(show_grid $ref_col $ref_row)
+        sed "s/^/$(echo -e '\e[36m|\e[0m') /;s/$/ $(echo -e '\e[36m|')/" < <(show_grid)
         if (($answer_bool>0)); then
             case $selected in
                 1)  YES='\e[36;1mYES\e[0m'
@@ -79,6 +79,7 @@ check_answer() {
 
 quit_reset() {
     selected=0
+    query=$(printf '%-6s' "$1?")
     while true; do
         tput reset
         case $selected in
@@ -89,10 +90,10 @@ quit_reset() {
         esac
         get_time
         echo -e "\e[0m$time_taken\n\e[36m+---------------------+"
-        sed "s/^/$(echo -e '\e[36m|\e[0m') /;s/$/ $(echo -e '\e[36m|')/" < <(show_grid $ref_col $ref_row)
+        sed "s/^/$(echo -e '\e[36m|\e[0m') /;s/$/ $(echo -e '\e[36m|')/" < <(show_grid)
         echo -en "|\e[0m                     \e[36m|
                 \r|\e[0m    Are you sure     \e[36m|
-                \r|\e[0m  you want to $1 \e[36m|
+                \r|\e[0m  you want to $query \e[36m|
                 \r|\e[0m      $YES    $NO      \e[36m|
                 \r\e[36m+---------------------+"
         read -sn1 -t1 key1
@@ -102,8 +103,8 @@ quit_reset() {
         [[ "$key3" == [CD] ]] && ((selected^=1))
         if [ -z "$key1" ]; then
             if (($selected)); then
-                [[ "$1" == "quit? " ]] && exit
-                if [[ "$1" == "reset?" ]]; then
+                [[ "$1" == "quit" ]] && exit
+                if [[ "$1" == "reset" ]]; then
                     # Clears the puzzle of all guesses and resets the timer
                     declare -A grid
                     for index in "${!grid_reset[@]}"; do
@@ -137,8 +138,6 @@ pause() {
                 \r$(show_help)
                 \r|\e[0m                     \e[36m|
                 \r|\e[0m                     \e[36m|
-                \r|\e[0m                     \e[36m|
-                \r|\e[0m                     \e[36m|
                 \r|\e[0m  $RETURN  $MENU  \e[36m|
                 \r|\e[0m                     \e[36m|
                 \r\e[36m+---------------------+"
@@ -161,7 +160,7 @@ show_grid() {
             (($col%3)) && echo -n ' ' || echo -n "${C}|${D}"
             # Checks if grid ref is highlighted by cursor
             if (($ref_col==$col && $ref_row==$row)) 2>/dev/null; then
-                echo -en "\e[36;1;4m${grid[$col,$row]}\e[0m"
+                echo -en "\e[$colour_num;1;4m${grid[$col,$row]}\e[0m"
             else
                 echo -en "${grid[$col,$row]}"
             fi
@@ -183,15 +182,18 @@ navigate() {
     trap extrap EXIT
     # Save epoch for timer
     [ -z "$start_time" ] && start_time=$(date '+%s')
+    # Set start position
     ref_col=0
     ref_row=0
+    # Set start colour
+    colour_num=36
     while true; do
         # Clear screen and scroll history
         tput reset
         get_time
         echo -e "$time_taken\n\e[36m+---------------------+"
         # Print puzzle with boarder
-        sed "s/^/$(echo -e '\e[36m|\e[0m') /;s/$/ $(echo -e '\e[36m|')/" < <(show_grid $ref_col $ref_row)
+        sed "s/^/$(echo -e '\e[36m|\e[0m') /;s/$/ $(echo -e '\e[36m|')/" < <(show_grid)
         echo -en '|\e[0m                     \e[36m|
                 \r|\e[0m                     \e[36m|
                 \r|\e[0m                     \e[36m|
@@ -209,29 +211,30 @@ navigate() {
            C)   (($ref_col==8)) && ref_col=0 || ((ref_col++));; # Right
            D)   (($ref_col==0)) && ref_col=8 || ((ref_col--));; # Left
         esac
-        # Checks if selected square is editable
-        if ((${unprotected[$ref_col,$ref_row]}==1)) 2>/dev/null; then
-            # If a number is input then it replaces the current grid reference
-            [[ "$key1" == [1-9] ]] && grid[$ref_col,$ref_row]="\e[36m$key1\e[0m"
-            # If a hyphen is input then it removes the current grid reference
-            [[ "$key1" == '-' ]] && grid[$ref_col,$ref_row]=' '
-        fi
         case "$key1" in
             c)      check_answer;;
             h|p)    pause_time_start=$(date '+%s')
                     pause
                     pause_time_finish=$(date '+%s')
                     ((start_time+=$(($pause_time_finish-$pause_time_start))));;
-            r)      quit_reset "reset?";;
-            q)      quit_reset "quit? ";;
+            q)      quit_reset "quit";;
+            r)      quit_reset "reset";;
+            s)      colour_num=$(($colour_num==36?31:$colour_num+1));;
         esac
+        # Checks if selected square is editable
+        if ((${unprotected[$ref_col,$ref_row]}==1)) 2>/dev/null; then
+            # If a number is input then it replaces the current grid reference
+            [[ "$key1" == [1-9] ]] && grid[$ref_col,$ref_row]="\e[${colour_num}m$key1\e[0m"
+            # If a hyphen is input then it removes the current grid reference
+            [[ "$key1" == '-' ]] && grid[$ref_col,$ref_row]=' '
+        fi
         unset key1 key2 key3
     done
 }
 
 scatter() {
     # Saves the filled puzzle before it gets scattered
-    show_grid > /tmp/sudoku_answer
+    show_grid >| /tmp/sudoku_answer
     # Sets likelyhood of more or less squares to be cleared (difficulty)
     # High numbers increases likelyhood. Subsequent matching or lower numbers are ignored
     range3="0-$1"
@@ -403,9 +406,11 @@ show_help() {
     echo -e '|\e[0m     \e[1mCheat Sheet\e[0m     \e[36m|
             \r|\e[0m                     \e[36m|
             \r|\e[0mArrow Keys - Move    \e[36m|
+            \r|\e[0m    -      - Clear   \e[36m|
             \r|\e[0m    C      - Check   \e[36m|
             \r|\e[0m   P/H     - Help    \e[36m|
             \r|\e[0m    R      - Restart \e[36m|
+            \r|\e[0m    S      - Colour  \e[36m|
             \r|\e[0m Q/Ctrl-C  - Quit    \e[36m|'
 }
 
@@ -423,12 +428,10 @@ main_menu() {
         echo -en "\e[36m+---------------------+
                 \r|\e[0m                     \e[36m|
                 \r|\e[0m    Ben  Pitman's    \e[36m|
-                \r|\e[0m                     \e[36m|
                 \r|\e[0m \e[1mInteractive  Sudoku\e[0m \e[36m|
                 \r|\e[0m                     \e[36m|
                 \r|\e[0m                     \e[36m|
                 \r$(show_help)
-                \r|\e[0m                     \e[36m|
                 \r|\e[0m                     \e[36m|
                 \r|\e[0m                     \e[36m|
                 \r|\e[0m    $START    $QUIT    \e[36m|
