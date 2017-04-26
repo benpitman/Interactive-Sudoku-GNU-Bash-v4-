@@ -7,6 +7,7 @@ exit
 
 extrap() {
     tput setaf 9
+    rm /tmp/sudoku*
 }
 
 check_answer() {
@@ -200,12 +201,12 @@ navigate() {
                 \r|\e[0m                     \e[36m|
                 \r+---------------------+'
         # Arrow keys are three characters long
-        read -sn1 -t1 key1
+        read -sn1 -t0.1 key1
         # Refresh the screen every second to update timer
         (($?==142)) && continue
         read -sn1 -t 0.0001 key2
         read -sn1 -t 0.0001 key3
-        case $key3 in
+        case "$key3" in
            A)   (($ref_row==0)) && ref_row=8 || ((ref_row--));; # Up
            B)   (($ref_row==8)) && ref_row=0 || ((ref_row++));; # Down
            C)   (($ref_col==8)) && ref_col=0 || ((ref_col++));; # Right
@@ -219,7 +220,8 @@ navigate() {
                     ((start_time+=$(($pause_time_finish-$pause_time_start))));;
             q)      quit_reset "quit";;
             r)      quit_reset "reset";;
-            s)      colour_num=$(($colour_num==36?31:$colour_num+1));;
+                    # Colour range: Yellow(33) Blue(34) Purple(35) Cyan(36) White(37)
+            s)      colour_num=$(($colour_num==37?33:$colour_num+1));;
         esac
         # Checks if selected square is editable
         if ((${unprotected[$ref_col,$ref_row]}==1)) 2>/dev/null; then
@@ -361,11 +363,11 @@ set_difficulty() {
                     difficulty=(0 0 0 4 9)
                     unset VERY_EASY EASY NORMAL HARD;;
             esac
-            VERY_EASY=${VERY_EASY:-'VERY  EASY'}
-            EASY=${EASY:-'EASY'}
-            NORMAL=${NORMAL:-'NORMAL'}
-            HARD=${HARD:-'HARD'}
-            VERY_HARD=${VERY_HARD:-'VERY  HARD'}
+            set ${VERY_EASY:='VERY  EASY'} \
+                ${EASY:='EASY'} \
+                ${NORMAL:='NORMAL'} \
+                ${HARD:='HARD'} \
+                ${VERY_HARD:='VERY  HARD'}
             echo -en "\e[36m+---------------------+
                     \r|\e[0m                     \e[36m|
                     \r|\e[0m                     \e[36m|
